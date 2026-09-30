@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"process.stdin.resume(); process.stdin.on('end',()=>{console.log(JSON.stringify({hookSpecificOutput:{hookEventName:'PreToolUse',additionalContext:'Observer hook ran before Read'}}))})\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"process.stdin.resume(); process.stdin.on('end',()=>{console.log(JSON.stringify({hookSpecificOutput:{hookEventName:'PostToolUse',additionalContext:'Observer hook ran after Read'}}))})\""
+          }
+        ]
+      }
+    ]
+  }
+}

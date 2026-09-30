@@ -1,0 +1,15 @@
+{
+  "name": "claude-code-runtime-observer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check run-observed-session.mjs && node --check run-native-vscode-session.mjs && node --check observe-claude-coordinator.mjs && node --check observe-claude-request.mjs && node --check observe-claude-skill.mjs && node --check vscode-native-session.mjs && node --check vscode-session-correlator.mjs && node --check vscode-parity.mjs && node --check routing-fidelity.mjs && node --check api-paths.mjs && node --check prompt-fidelity.mjs && node --check recording-proxy.mjs && node --check agent-maestro-capture.mjs && node --check http-exchanges.mjs && node --check coverage-auditor.mjs && node --check teaching-replay.mjs && node --check extract-final-report.mjs && node --check replay-model.mjs && node --check build-case-index.mjs && node --check compare-runs.mjs && node --check verify-run.mjs && node --check dashboard/app.js && node --check build-runtime-dashboard.mjs",
+    "test": "node --test test-observe-claude-coordinator.mjs test-vscode-native-session.mjs test-routing-fidelity.mjs test-prompt-fidelity.mjs test-recording-proxy.mjs test-agent-maestro-capture.mjs test-coverage-auditor.mjs test-derived-views.mjs test-runner-e2e.mjs test-replay-model.mjs test-dashboard.mjs",
+    "docs": "node generate-reference-docs.mjs",
+    "compare": "node compare-runs.mjs",
+    "index": "node build-case-index.mjs",
+    "build:native-wrapper": "native-vscode-wrapper\\build-wrapper.cmd",
+    "test:notebook": "C:/Users/xueyi/.conda/envs/trading/python.exe test-notebook-replay.py",
+    "ability:start": "node observe-claude-skill.mjs"
+  }
+}

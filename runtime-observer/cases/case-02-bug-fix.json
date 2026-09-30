@@ -1,0 +1,6 @@
+{
+  "id": "case-02-bug-fix",
+  "title": "Bug Fix + Test",
+  "workspace": "../fixtures/bug-fix",
+  "task": "请先用普通可见文本说明计划，然后找出这个小项目中的错误，修改实现，并运行测试直到通过。不要改测试。最终说明失败原因、修改内容和测试结果。"
+}

@@ -1,0 +1,6 @@
+{
+  "id": "case-04-hooks",
+  "title": "Hook / Permission",
+  "workspace": "../fixtures/read-search",
+  "task": "请先说明计划，然后只使用 Read 读取 README.md 并报告第一行。"
+}

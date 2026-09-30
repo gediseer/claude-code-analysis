@@ -1,0 +1,6 @@
+{
+  "id": "case-03-subagent",
+  "title": "Subagent 委派",
+  "workspace": "../fixtures/read-search",
+  "task": "请先用普通可见文本说明计划。然后启动两个 Explore 子 Agent：一个分析程序入口与调用链，另一个分析测试与潜在边界；等待它们完成后，综合两份结果。不要修改文件。"
+}

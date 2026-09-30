@@ -77,6 +77,10 @@ claude-code-analysis/
                               回流到执行内核
 ```
 
+## Runtime Observer
+
+[Runtime Observer](./runtime-observer/README.md) launches an independent visible native VS Code Claude Code Session, routes only the observed process to port 33333, records complete Anthropic-compatible HTTP/SSE evidence, and generates a self-contained Session replay.
+
 ## 分章目录
 
 ### 第一部分：总体架构

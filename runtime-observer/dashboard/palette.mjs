@@ -1,0 +1,45 @@
+export const DASHBOARD_PALETTE = Object.freeze({
+  light: {
+    page: '#f9f9f7',
+    surface: '#fcfcfb',
+    elevated: '#ffffff',
+    text: '#0b0b0b',
+    secondary: '#52514e',
+    muted: '#898781',
+    grid: '#e1e0d9',
+    axis: '#c3c2b7',
+    border: 'rgba(11,11,11,.10)',
+    lanes: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'],
+  },
+  dark: {
+    page: '#0d0d0d',
+    surface: '#1a1a19',
+    elevated: '#222220',
+    text: '#ffffff',
+    secondary: '#c3c2b7',
+    muted: '#898781',
+    grid: '#2c2c2a',
+    axis: '#383835',
+    border: 'rgba(255,255,255,.10)',
+    lanes: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9'],
+  },
+  status: {
+    captured: '#0ca30c',
+    derived: '#2a78d6',
+    partial: '#fab219',
+    warning: '#ec835a',
+    error: '#d03b3b',
+    neutral: '#898781',
+    notExposed: '#9085e9',
+  },
+})
+
+export const LANE_META = Object.freeze([
+  { id: 'user', label: 'User / Input', colorSlot: 0 },
+  { id: 'query', label: 'Main Agent / Query', colorSlot: 1 },
+  { id: 'api', label: 'Model API', colorSlot: 2 },
+  { id: 'tool', label: 'Tool Runtime', colorSlot: 3 },
+  { id: 'permission', label: 'Permission / Hook', colorSlot: 4 },
+  { id: 'agent', label: 'Subagent / Task', colorSlot: 5 },
+  { id: 'persistence', label: 'Persistence / Side effect', colorSlot: 6 },
+])

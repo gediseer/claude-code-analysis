@@ -1,0 +1,6 @@
+{
+  "id": "case-01-read-search",
+  "title": "Read / Search 主循环",
+  "workspace": "../fixtures/read-search",
+  "task": "这是一个只读观察实验。请先用普通可见文本列出一个简短执行计划，然后只使用 Read、Glob、Grep 检查这个小项目，说明程序入口、模块关系和一次请求的执行路径。不要修改任何文件。最终列出实际调用过的工具。"
+}

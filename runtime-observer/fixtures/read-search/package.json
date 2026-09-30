@@ -1,0 +1,8 @@
+{
+  "name": "runtime-observer-read-search-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

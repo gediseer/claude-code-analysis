@@ -1,0 +1,6 @@
+{
+  "id": "case-05-explicit-prompt",
+  "title": "Prompt Fidelity / 无 Observer System Prompt",
+  "workspace": "../fixtures/read-search",
+  "task": "读取这个小型项目，说明入口和模块关系。"
+}
