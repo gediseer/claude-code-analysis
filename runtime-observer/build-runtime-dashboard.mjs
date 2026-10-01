@@ -56,7 +56,7 @@ export async function buildRuntimeDashboard(runDir) {
     throw new Error(`Dashboard template placeholders must each occur once: ${JSON.stringify(placeholderCounts)}`)
   }
   const modelPath = path.join(runDir, '04-readable', 'replay-model.json')
-  const htmlPath = path.join(runDir, 'runtime-replay.html')
+  const htmlPath = path.join(runDir, 'legacy-run-dashboard.html')
   await writeJson(modelPath, model)
   await writeFile(htmlPath, html, 'utf8')
   return {

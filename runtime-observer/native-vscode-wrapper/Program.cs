@@ -267,7 +267,9 @@ namespace ClaudeObserverWrapper
         private static void WriteAuditRecord(string filePath, IDictionary<string, object> values)
         {
             var parts = values.Select(pair => "  \"" + JsonEscape(pair.Key) + "\": " + JsonValue(pair.Value));
-            File.WriteAllText(filePath, "{\r\n" + String.Join(",\r\n", parts) + "\r\n}\r\n", new UTF8Encoding(false));
+            var temporaryPath = filePath + "." + Process.GetCurrentProcess().Id + ".tmp";
+            File.WriteAllText(temporaryPath, "{\r\n" + String.Join(",\r\n", parts) + "\r\n}\r\n", new UTF8Encoding(false));
+            File.Move(temporaryPath, filePath);
         }
 
         private static string JsonValue(object value)

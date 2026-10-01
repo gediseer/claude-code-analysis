@@ -45,7 +45,7 @@ const lines = [
 ]
 for (const row of rows) {
   lines.push(
-    `| [${row.name}](${row.name}/runtime-replay.html) | ${row.stats.records} | ${row.live?.records ?? '-'} | ${row.apiTurns.length || '-'} | ${row.stats.toolUses}/${row.stats.toolResults} | ${row.stats.subagents} | ${row.coverage ? `${row.coverage.summary.captured}/${row.coverage.summary.partial}/${row.coverage.summary.missing}` : '-'} | ${row.routing?.status ?? '-'} | ${row.processResult?.code ?? '-'} |`,
+    `| [${row.name}](${row.name}/legacy-run-dashboard.html) | ${row.stats.records} | ${row.live?.records ?? '-'} | ${row.apiTurns.length || '-'} | ${row.stats.toolUses}/${row.stats.toolResults} | ${row.stats.subagents} | ${row.coverage ? `${row.coverage.summary.captured}/${row.coverage.summary.partial}/${row.coverage.summary.missing}` : '-'} | ${row.routing?.status ?? '-'} | ${row.processResult?.code ?? '-'} |`,
   )
 }
 lines.push('', '- [Cross-case comparison](COMPARE.md)', '', 'Each Run contains raw process streams, API requests/responses when proxied, session artifacts, workspace snapshots, coverage, teaching replay and SHA-256 manifests.', '')

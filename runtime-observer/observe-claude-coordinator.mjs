@@ -44,16 +44,6 @@ import { classifyCapturedNativeRequest } from './vscode-parity.mjs'
 
 const CURRENT_VERSION = 1
 const TERMINAL_PHASES = new Set(['completed', 'failed'])
-const ACTIVE_PHASES = new Set([
-  'created',
-  'preflight',
-  'launched',
-  'awaiting-submit',
-  'session-discovered',
-  'running',
-  'idle',
-  'replay-building',
-])
 const stateQueues = new Map()
 
 const PHASE_ORDER = [
@@ -74,7 +64,14 @@ const DEFAULT_JOBS_ROOT = path.join(DEFAULT_REPO_ROOT, '.claude', 'observe-claud
 const DEFAULT_PROFILE_ROOT = path.join(DEFAULT_OBSERVER_REPO, '.observer-native')
 const DEFAULT_CAPTURE_ROOT = path.join(DEFAULT_OBSERVER_REPO, 'data')
 const DEFAULT_NOTEBOOK = path.join(DEFAULT_CAPTURE_ROOT, 'build_session_replays.ipynb')
-const DEFAULT_PYTHON = path.join(os.homedir(), '.conda', 'envs', 'trading', 'python.exe')
+const DEFAULT_PYTHON_CANDIDATES = process.platform === 'win32'
+  ? [
+      process.env.OBSERVER_PYTHON,
+      path.join(os.homedir(), '.conda', 'envs', 'trading', 'python.exe'),
+      'python.exe',
+      'py.exe',
+    ]
+  : [process.env.OBSERVER_PYTHON, 'python3', 'python']
 const DEFAULT_CODE = process.platform === 'win32' ? 'code.cmd' : 'code'
 
 export function parseArgs(argv) {
@@ -155,6 +152,11 @@ async function updateState(jobDir, patch, eventType = 'state') {
   stateQueues.set(jobDir, nextWrite)
   await nextWrite
   return result
+}
+
+function heartbeatFresh(job, maxAgeMs = 20_000) {
+  const timestamp = Date.parse(job?.heartbeatAt || '')
+  return Number.isFinite(timestamp) && Date.now() - timestamp <= maxAgeMs
 }
 
 async function processAlive(pid) {
@@ -280,12 +282,37 @@ async function ensureWrapper(job) {
   }
 }
 
+async function resolvePython(candidate) {
+  const candidates = [candidate, ...DEFAULT_PYTHON_CANDIDATES].filter(Boolean)
+  for (const value of [...new Set(candidates)]) {
+    if (path.isAbsolute(value) && !(await exists(value))) continue
+    const child = spawn(value, ['-c', 'import nbclient, nbformat'], {
+      windowsHide: true,
+      shell: false,
+      stdio: 'ignore',
+    })
+    const code = await new Promise(resolve => {
+      child.once('error', () => resolve(-1))
+      child.once('close', resolve)
+    })
+    if (code === 0) return value
+  }
+  throw new Error('No Python executable with nbclient and nbformat is available; set OBSERVER_PYTHON.')
+}
+
 async function preflight(job, jobDir) {
   if (!(await exists(job.workspace))) throw new Error(`Workspace is unavailable: ${job.workspace}`)
   await ensureWrapper(job)
   if (!(await exists(job.wrapperExecutable))) throw new Error(`Observer wrapper is unavailable: ${job.wrapperExecutable}`)
-  if (!(await exists(job.notebookPath))) throw new Error(`Replay Notebook is unavailable: ${job.notebookPath}`)
-  if (!(await exists(job.pythonExecutable))) throw new Error(`Notebook Python is unavailable: ${job.pythonExecutable}`)
+  if (path.resolve(job.notebookPath) !== path.resolve(DEFAULT_NOTEBOOK)) {
+    throw new Error(`Replay Notebook must be the canonical generator: ${DEFAULT_NOTEBOOK}`)
+  }
+  if (!(await exists(DEFAULT_NOTEBOOK))) throw new Error(`Replay Notebook is unavailable: ${DEFAULT_NOTEBOOK}`)
+  const pythonExecutable = await resolvePython(job.pythonExecutable)
+  if (pythonExecutable !== job.pythonExecutable) {
+    await updateState(jobDir, { pythonExecutable }, 'python-resolved')
+    job.pythonExecutable = pythonExecutable
+  }
   if (process.platform === 'win32' && path.isAbsolute(job.codeCommand) && !(await exists(job.codeCommand))) {
     throw new Error(`VS Code launcher is unavailable: ${job.codeCommand}`)
   }
@@ -321,6 +348,9 @@ async function validateCapturedSession(captureRoot, sessionId) {
     const summary = await readJson(path.join(exchangeDir, 'summary.json'))
     if (summary.state !== 'completed') {
       throw new Error(`Exchange ${entry.name} is ${summary.state}, not completed.`)
+    }
+    if (!Number.isInteger(summary.responseStatus) || summary.responseStatus < 200 || summary.responseStatus >= 300) {
+      throw new Error(`Exchange ${entry.name} returned unsuccessful HTTP ${summary.responseStatus}.`)
     }
     for (const [fileName, bytesKey, hashKey] of [
       ['01-client-request.raw', 'requestBytes', 'requestSha256'],
@@ -378,7 +408,14 @@ async function firstNativeApiEvidence(captureRoot, sessionId) {
     .filter(entry => entry.isDirectory())
     .sort((left, right) => left.name.localeCompare(right.name))
   for (const entry of entries) {
-    const parsedPath = path.join(exchangesRoot, entry.name, '02-client-request.parsed.json')
+    const exchangeDir = path.join(exchangesRoot, entry.name)
+    const summaryPath = path.join(exchangeDir, 'summary.json')
+    if (!(await exists(summaryPath))) continue
+    const summary = await readJson(summaryPath)
+    const normalizedPath = String(summary.path || '').split('?', 1)[0].replace(/\/+$/, '')
+    if (summary.method !== 'POST' || !normalizedPath.endsWith('/v1/messages')) continue
+    if (summary.state !== 'completed' || summary.responseStatus < 200 || summary.responseStatus >= 300) continue
+    const parsedPath = path.join(exchangeDir, '02-client-request.parsed.json')
     if (!(await exists(parsedPath))) continue
     const body = await readJson(parsedPath)
     if (!body?.messages || !classifyCapturedNativeRequest(body).valid) continue
@@ -440,9 +477,19 @@ async function writeSessionEvidence(job, sessionId, correlation, routingFidelity
 
 async function worker(jobDir) {
   const release = await acquireLock(jobDir)
+  const leaseRoot = path.dirname(jobDir)
+  const leasePath = path.join(leaseRoot, 'observer-runtime.lock')
+  let leaseHandle
   let networkMonitor = null
   let heartbeat = null
   try {
+    leaseHandle = await open(leasePath, 'wx').catch(error => {
+      if (error.code === 'EEXIST') {
+        throw new Error('Another observe-claude job owns the shared profile/33333 runtime lease.')
+      }
+      throw error
+    })
+    await leaseHandle.writeFile(`${JSON.stringify({ jobDir, pid: process.pid, createdAt: new Date().toISOString() })}\n`)
     let job = await readJson(statePath(jobDir))
     heartbeat = setInterval(() => {
       updateState(jobDir, { heartbeatAt: new Date().toISOString(), workerPid: process.pid }, 'heartbeat')
@@ -470,6 +517,12 @@ async function worker(jobDir) {
       await atomicJson(path.join(jobDir, 'ledger-checkpoint.json'), ledgerCheckpoint)
       const marker = await writeObserverBanner(profile, job.jobId)
       const launchedAt = new Date().toISOString()
+      await updateState(jobDir, {
+        phase: 'launched',
+        launchedAt,
+        profile,
+        launchIntent: true,
+      }, 'launch-intent')
       const launch = await launchNativeVsCode({
         codeCommand: job.codeCommand,
         profile,
@@ -482,12 +535,16 @@ async function worker(jobDir) {
         launchedAt,
         vscodePid: launch.pid,
         profile,
+        launchIntent: false,
       }, 'phase')
       await updateState(jobDir, { phase: 'awaiting-submit' }, 'phase')
       job = await readJson(statePath(jobDir))
     }
 
     if (['launched', 'awaiting-submit'].includes(job.phase)) {
+      if (job.launchIntent && !(await exists(path.join(jobDir, 'native-launch.json')))) {
+        throw new Error('Native launch was interrupted after durable intent; automatic relaunch is refused to prevent a duplicate window.')
+      }
       const auditDirectory = path.join(jobDir, 'wrapper-audit')
       const primaryProcessPath = path.join(jobDir, 'primary-process.json')
       let primaryProcess
@@ -506,7 +563,9 @@ async function worker(jobDir) {
         await updateState(jobDir, { childPid: primaryProcess.child.childPid }, 'primary-process-discovered')
       }
       const networkPath = path.join(jobDir, 'network-connections.jsonl')
-      if (await exists(networkPath)) await rm(networkPath, { force: true })
+      if (await exists(networkPath)) {
+        throw new Error('Routing monitor evidence already exists before Session discovery; an interrupted epoch cannot be verified continuously.')
+      }
       networkMonitor = startProcessTreeMonitor(primaryProcess.child.childPid, networkPath)
       await networkMonitor.ready
       const ledgerCheckpoint = await readJson(path.join(jobDir, 'ledger-checkpoint.json'))
@@ -516,6 +575,26 @@ async function worker(jobDir) {
         configDir: job.configDir,
         workspace: job.workspace,
         expectedPromptSha256: job.promptSha256,
+        promptAssessment: async ({ expectedPromptSha256, transcript, sessionId, captureRoot }) => {
+          const firstUser = transcript?.firstUser?.message?.content
+          const transcriptText = typeof firstUser === 'string'
+            ? firstUser
+            : Array.isArray(firstUser)
+              ? firstUser.filter(block => block?.type === 'text').map(block => block.text).join('')
+              : null
+          if (sha256Text(transcriptText || '') !== expectedPromptSha256) {
+            return { valid: false, reason: 'transcript Prompt hash mismatch' }
+          }
+          try {
+            const apiPrompt = await firstNativeApiEvidence(captureRoot, sessionId)
+            return {
+              valid: apiPrompt.available && apiPrompt.sha256 === expectedPromptSha256,
+              reason: apiPrompt.available ? 'API Prompt hash mismatch' : 'API Prompt unavailable',
+            }
+          } catch (error) {
+            return { valid: false, reason: error.message }
+          }
+        },
         notBefore: job.launchedAt,
         timeoutMs: 24 * 60 * 60 * 1000,
         pollMs: 500,
@@ -534,8 +613,7 @@ async function worker(jobDir) {
       if (!job.sessionId || !job.childPid) throw new Error('Running job lacks Session ID or Claude child PID.')
       const networkPath = path.join(jobDir, 'network-connections.jsonl')
       if (!networkMonitor) {
-        networkMonitor = startProcessTreeMonitor(job.childPid, networkPath)
-        await networkMonitor.ready
+        throw new Error('Routing monitor continuity was interrupted; routing evidence is unavailable for this job.')
       }
       await waitForNativeSessionIdle({
         userDataDir: job.profile.userDataDir,
@@ -569,15 +647,26 @@ async function worker(jobDir) {
         workspace: job.workspace,
       })
       const correlation = { sessionId: job.sessionId, transcript }
-      await updateState(jobDir, { phase: 'idle', routingStatus: routingFidelity.status }, 'phase')
       const parity = await writeSessionEvidence(job, job.sessionId, correlation, routingFidelity, networkPath)
-      await updateState(jobDir, { phase: 'replay-building', parityStatus: parity.status }, 'phase')
+      await updateState(jobDir, {
+        phase: 'idle',
+        routingStatus: routingFidelity.status,
+        parityStatus: parity.status,
+        parityWrittenAt: new Date().toISOString(),
+      }, 'phase')
+      await updateState(jobDir, { phase: 'replay-building' }, 'phase')
       job = await readJson(statePath(jobDir))
     }
 
     if (['idle', 'replay-building'].includes(job.phase)) {
       if (!job.sessionId) throw new Error('Replay job lacks Session ID.')
-      await updateState(jobDir, { phase: 'replay-building' }, 'phase')
+      const parityPath = path.join(job.captureRoot, 'sessions', job.sessionId, 'parity-manifest.json')
+      if (!(await exists(parityPath))) throw new Error('Verified parity manifest is missing before replay generation.')
+      const parityManifest = await readJson(parityPath)
+      if (parityManifest.status !== 'PARITY_VERIFIED_WITH_DECLARED_ROUTING') {
+        throw new Error(`Replay requires verified parity, received ${parityManifest.status || 'unknown'}.`)
+      }
+      await updateState(jobDir, { phase: 'replay-building', parityStatus: parityManifest.status }, 'phase')
       const exchangeCount = await validateCapturedSession(job.captureRoot, job.sessionId)
       const replayPath = path.join(job.captureRoot, 'sessions', job.sessionId, 'runtime-replay.html')
       const previousMtime = (await exists(replayPath)) ? (await stat(replayPath)).mtimeMs : 0
@@ -594,6 +683,8 @@ async function worker(jobDir) {
         throw new Error(`Replay rendered ${renderedExchangeCount} of ${exchangeCount} exchanges.`)
       }
       if (replayText.includes('INTEGRITY FAILED')) throw new Error('Replay reports an integrity failure.')
+      const parityMatches = replayText.match(/PARITY_VERIFIED_WITH_DECLARED_ROUTING/g) || []
+      if (parityMatches.length !== 1) throw new Error('Replay does not contain exactly one verified parity banner.')
       if (!replayText.includes(`Session ${job.sessionId}`)) throw new Error('Replay Session ID does not match the observed Session.')
       await updateState(jobDir, {
         phase: 'completed',
@@ -613,6 +704,8 @@ async function worker(jobDir) {
     throw error
   } finally {
     if (heartbeat) clearInterval(heartbeat)
+    if (leaseHandle) await leaseHandle.close().catch(() => undefined)
+    await rm(leasePath, { force: true }).catch(() => undefined)
     await release()
   }
 }
@@ -631,21 +724,29 @@ async function start(options) {
   const promptSha256 = sha256Text(prompt)
   const jobKey = keyFor(workspace, promptSha256)
   const matchingJobs = (await listJobs(jobsRoot)).filter(job => job.jobKey === jobKey)
-  const matches = matchingJobs.filter(job => ACTIVE_PHASES.has(job.phase))
-  if (matches.length > 1) throw new Error(`Duplicate active jobs exist for Prompt hash ${promptSha256}.`)
-  if (matches.length === 1) {
-    const existing = matches[0]
-    if (await processAlive(existing.workerPid)) return { resumed: true, job: existing }
+  if (matchingJobs.length > 1) throw new Error(`Duplicate jobs exist for Prompt hash ${promptSha256}.`)
+  if (matchingJobs.length === 1) {
+    const existing = matchingJobs[0]
+    if (existing.phase === 'completed') return { resumed: false, job: existing }
+    if (existing.phase === 'failed') {
+      throw new Error(`Existing job ${existing.jobId} failed; use an explicit retry workflow rather than duplicating the same Prompt key.`)
+    }
+    if (await processAlive(existing.workerPid) && heartbeatFresh(existing)) return { resumed: true, job: existing }
     const lockPath = path.join(jobsRoot, existing.jobId, 'worker.lock')
     if (await exists(lockPath)) await rm(lockPath, { force: true })
     await spawnWorker(path.join(jobsRoot, existing.jobId))
     return { resumed: true, job: await readJson(statePath(path.join(jobsRoot, existing.jobId))) }
   }
 
-  const jobId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${promptSha256.slice(0, 12)}`
+  const jobId = jobKey
   const jobDir = path.join(jobsRoot, jobId)
   await ensureDir(jobsRoot)
-  await mkdir(jobDir, { recursive: false })
+  await mkdir(jobDir, { recursive: false }).catch(error => {
+    if (error.code === 'EEXIST') {
+      throw new Error(`Observe-claude job key was created concurrently: ${jobKey}`)
+    }
+    throw error
+  })
   const promptPath = path.join(jobDir, 'prompt.txt')
   await writeFile(promptPath, prompt, { encoding: 'utf8', flag: 'wx' })
   const job = {
@@ -664,8 +765,8 @@ async function start(options) {
     observerRepo: path.resolve(request.observerRepo || DEFAULT_OBSERVER_REPO),
     profileRoot: path.resolve(request.profileRoot || DEFAULT_PROFILE_ROOT),
     captureRoot: path.resolve(request.captureRoot || DEFAULT_CAPTURE_ROOT),
-    notebookPath: path.resolve(request.notebookPath || DEFAULT_NOTEBOOK),
-    pythonExecutable: path.resolve(request.pythonExecutable || DEFAULT_PYTHON),
+    notebookPath: path.resolve(DEFAULT_NOTEBOOK),
+    pythonExecutable: request.pythonExecutable || process.env.OBSERVER_PYTHON || null,
     wrapperExecutable: path.resolve(
       request.wrapperExecutable || path.join(request.profileRoot || DEFAULT_PROFILE_ROOT, 'bin', 'claude-observer-wrapper.exe'),
     ),
@@ -684,7 +785,7 @@ async function resume(options) {
   const lockPath = path.join(selected.jobDir, 'worker.lock')
   if (await exists(lockPath)) {
     const lock = await readJson(lockPath).catch(() => null)
-    if (lock && await processAlive(lock.pid)) {
+    if (lock && await processAlive(lock.pid) && heartbeatFresh(selected.job)) {
       throw new Error(`Job ${selected.job.jobId} already has a live worker.`)
     }
     await rm(lockPath, { force: true })

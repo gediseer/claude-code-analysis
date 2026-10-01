@@ -500,6 +500,6 @@ test('runner records a complete independent Claude process through fake upstream
   assert.equal(await exists(path.join(runDir, '04-readable', 'replay-model.json')), true)
   const replayModel = JSON.parse(await readFile(path.join(runDir, '04-readable', 'replay-model.json'), 'utf8'))
   assert.equal(replayModel.run.routingFidelity.status, 'ROUTING_FIDELITY_VERIFIED')
-  assert.equal(await exists(path.join(runDir, 'runtime-replay.html')), true)
+  assert.equal(await exists(path.join(runDir, 'legacy-run-dashboard.html')), true)
   await rm(runsRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
 })

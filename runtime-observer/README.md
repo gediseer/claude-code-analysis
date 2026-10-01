@@ -120,11 +120,7 @@ Prompt 是研究变量：`--prompt` 的 Unicode 字符串只通过 Claude Code �
 
 `--task` 仅作为 `--prompt` 的兼容别名；`--task-compiler` 仅是 legacy 参数，新 Run 会拒绝非 identity compiler。Run 完成后，`00-task/prompt-fidelity.json` 会把 launch payload 与首个 main-chain transcript user、首个模型 Request 的 user 输入逐字对照。只有全部可用证据相等才标为 `verbatim`；值不同标为 `provenance-mismatch`；新 Run 缺 transcript/API 证据标为 `evidence-unavailable`；历史证据不足标为 `legacy-unverified`；历史改写标为 `legacy-rewritten`。声明的 parent session/message ID 未解析到父 transcript 时只标为 declared-unverified。Observer 不设置模型、预算或运行时限，避免改变 Session 的自然执行路径。
 
-只重建已有 Run 的 Dashboard（不会调用模型）：
-
-```bash
-node ClaudeCode/claude-code-analysis/runtime-observer/rebuild-dashboard.mjs --all
-```
+历史 Run 可重建为 `legacy-run-dashboard.html`（不会调用模型）；它不是 Ability replay。Ability 的 `runtime-replay.html` 只能由 `agent-maestro-observer/data/build_session_replays.ipynb` 生成。
 
 Native Run 不允许 Observer 设置 System Prompt、工具、模型、effort、预算、超时、Session ID 或权限答案。原生扩展自然提供 `claude-vscode` System Prompt、IDE Context、Hooks、MCP 与默认工具。独立 profile 唯一行为控制是 33333 路由和 Manual/default 权限模式；后者只确保 UI 显示授权，不代表 Observer 作出决定。
 

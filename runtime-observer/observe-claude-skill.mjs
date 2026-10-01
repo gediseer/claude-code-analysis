@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -62,11 +62,7 @@ export async function main(argv = process.argv.slice(2)) {
     prompt,
     promptSha256: sha256(prompt),
   }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
-  try {
-    return await runNode([coordinatorPath, 'start', '--request-file', requestFile])
-  } finally {
-    await rm(promptPath, { force: true })
-  }
+  return runNode([coordinatorPath, 'start', '--request-file', requestFile])
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))

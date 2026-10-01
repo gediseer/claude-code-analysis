@@ -58,7 +58,7 @@ export async function compareRuns({ runsRoot = defaultRunsRoot }) {
     '|---|---:|---:|---:|---:|---:|---:|---:|---:|---|',
   ]
   for (const run of runs) {
-    lines.push(`| [${run.name}](${run.name}/runtime-replay.html) | ${run.stats.records} | ${run.live?.records ?? '-'} | ${run.apiTurns.length || '-'} | ${run.stats.toolUses}/${run.stats.toolResults} | ${run.stats.subagents} | ${run.finalResult?.num_turns ?? '-'} | ${run.finalResult?.total_cost_usd ?? '-'} | ${run.finalResult?.duration_ms ?? run.processResult?.duration_ms ?? '-'} | ${run.routing?.status ?? '-'} |`)
+    lines.push(`| [${run.name}](${run.name}/legacy-run-dashboard.html) | ${run.stats.records} | ${run.live?.records ?? '-'} | ${run.apiTurns.length || '-'} | ${run.stats.toolUses}/${run.stats.toolResults} | ${run.stats.subagents} | ${run.finalResult?.num_turns ?? '-'} | ${run.finalResult?.total_cost_usd ?? '-'} | ${run.finalResult?.duration_ms ?? run.processResult?.duration_ms ?? '-'} | ${run.routing?.status ?? '-'} |`)
   }
   lines.push('', '## 架构层覆盖差异', '')
   lines.push(`| Layer | ${runs.map(run => run.name).join(' | ')} |`)

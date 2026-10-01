@@ -85,6 +85,7 @@ test('native launcher removes inherited VS Code CLI-only environment', async () 
       claudeConfigDir: 'C:/Users/test/.claude',
       endpoint: 'http://127.0.0.1:33333/api/anthropic',
       rootDir: 'E:/observer',
+      captureRoot: 'E:/observer/capture',
       wrapperExecutable: null,
     },
     prompt: 'hello',
@@ -97,13 +98,14 @@ test('native launcher removes inherited VS Code CLI-only environment', async () 
       observed.push({ command, args, options })
       return fakeChild
     },
+    waitForObserverReadyImpl: async () => ({ serviceId: 'agent-maestro-observer' }),
   })
   assert.equal(observed.length, 2)
   assert.equal(observed[0].options.env.ELECTRON_RUN_AS_NODE, undefined)
   assert.equal(observed[0].options.env.VSCODE_CWD, undefined)
   assert.equal(observed[0].options.env.KEEP_ME, 'yes')
   assert.equal(observed[0].options.env.AGENT_MAESTRO_OBSERVER_HOST, '1')
-  assert.equal(observed[0].options.env.AGENT_MAESTRO_OBSERVER_PROXY_PORT, '33333')
+  assert.equal(observed[0].options.env.AGENT_MAESTRO_OBSERVER_CAPTURE_ROOT, 'E:/observer/capture')
   assert.equal(observed[0].args.some(arg => arg.startsWith('vscode://')), false)
   assert.equal(observed[1].args.some(arg => arg.includes('--reuse-window')), true)
   assert.equal(observed[1].args.at(-1).startsWith('vscode://anthropic.claude-code/open?'), true)

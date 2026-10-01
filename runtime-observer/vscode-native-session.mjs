@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile, readdir, rm } from 'node:fs/promises'
+import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -19,7 +20,6 @@ export const OBSERVER_PROFILE_NAME = 'Claude Observer Native'
 
 const EXTENSION_IDS = Object.freeze({
   claude: 'anthropic.claude-code',
-  officialMaestro: 'joouis.agent-maestro',
   observerMaestro: 'local-observer.agent-maestro-observer',
 })
 
@@ -118,16 +118,13 @@ function nativeVsCodeSettings({ captureRoot }) {
     'claudeCode.environmentVariables': [
       { name: 'ANTHROPIC_BASE_URL', value: REQUIRED_ENDPOINT },
     ],
-    'agent-maestro-observer.proxyServerPort': 33333,
     'agent-maestro-observer.observer.enabled': true,
     'agent-maestro-observer.observer.failureMode': 'strict',
     'agent-maestro-observer.observer.maxBodyBytes': 1073741824,
     'agent-maestro-observer.observer.outputDirectory': captureRoot,
-    'agent-maestro.proxyServerPort': 23333,
     'extensions.autoUpdate': false,
     'extensions.autoCheckUpdates': false,
     'update.mode': 'none',
-    'security.workspace.trust.enabled': true,
     'window.restoreWindows': 'none',
   }
 }
@@ -242,6 +239,7 @@ export function codeLaunchArgs({ profile, prompt, newWindow = true, includePromp
   const args = [
     '--user-data-dir', profile.userDataDir,
     '--extensions-dir', profile.extensionsDir,
+    '--disable-extension', 'joouis.agent-maestro',
   ]
   if (newWindow) args.push('--new-window')
   args.push(profile.workspace)
@@ -254,10 +252,73 @@ export function codePromptArgs({ profile, prompt } = {}) {
   return [
     '--user-data-dir', profile.userDataDir,
     '--extensions-dir', profile.extensionsDir,
+    '--disable-extension', 'joouis.agent-maestro',
     '--reuse-window',
     '--open-url',
     observerPromptUri(prompt),
   ]
+}
+
+function waitForCommandHandoff(child, label, timeoutMs = 10000) {
+  if (typeof child?.once !== 'function') return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      resolve()
+    }, timeoutMs)
+    timer.unref?.()
+    child.once('error', error => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(new Error(`${label} failed to launch: ${error.message}`))
+    })
+    child.once('exit', code => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (code === 0) resolve()
+      else reject(new Error(`${label} exited with code ${code}`))
+    })
+  })
+}
+
+export async function waitForObserverReady({ captureRoot, timeoutMs = 60000, pollMs = 250 } = {}) {
+  const deadline = Date.now() + timeoutMs
+  let lastError = null
+  while (Date.now() < deadline) {
+    try {
+      const info = await new Promise((resolve, reject) => {
+        const request = http.get('http://127.0.0.1:33333/api/v1/info', { timeout: 2000 }, response => {
+          let body = ''
+          response.setEncoding('utf8')
+          response.on('data', chunk => { body += chunk })
+          response.on('end', () => {
+            try { resolve(JSON.parse(body)) } catch (error) { reject(error) }
+          })
+        })
+        request.on('error', reject)
+        request.on('timeout', () => request.destroy(new Error('Observer readiness request timed out')))
+      })
+      const observedRoot = path.resolve(info?.observer?.captureRoot || '')
+      if (
+        info?.serviceId === 'agent-maestro-observer' &&
+        info?.extensionId === 'local-observer.agent-maestro-observer' &&
+        info?.observer?.dedicatedHost === true &&
+        info?.observer?.port === 33333 &&
+        info?.observer?.bindAddress === '127.0.0.1' &&
+        info?.observer?.failureMode === 'strict' &&
+        observedRoot === path.resolve(captureRoot)
+      ) return info
+      lastError = new Error('Observer identity or strict capture configuration mismatch')
+    } catch (error) {
+      lastError = error
+    }
+    await new Promise(resolve => setTimeout(resolve, pollMs))
+  }
+  throw new Error(`Observer did not become ready on 127.0.0.1:33333: ${lastError?.message || 'timeout'}`)
 }
 
 function spawnVsCodeCommand(spawnImpl, codeCommand, args, options) {
@@ -275,6 +336,7 @@ export async function launchNativeVsCode({
   environment = process.env,
   spawnImpl = spawn,
   launchUriImpl,
+  waitForObserverReadyImpl = waitForObserverReady,
 } = {}) {
   const args = codeLaunchArgs({ profile, prompt, includePrompt: false })
   const env = {
@@ -282,7 +344,7 @@ export async function launchNativeVsCode({
     CLAUDE_CONFIG_DIR: profile.claudeConfigDir,
     ANTHROPIC_BASE_URL: REQUIRED_ENDPOINT,
     AGENT_MAESTRO_OBSERVER_HOST: '1',
-    AGENT_MAESTRO_OBSERVER_PROXY_PORT: '33333',
+    AGENT_MAESTRO_OBSERVER_CAPTURE_ROOT: profile.captureRoot,
   }
   if (profile.wrapperExecutable) {
     env.CLAUDE_OBSERVER_AUDIT_DIR = path.resolve(auditDirectory || path.join(profile.rootDir, 'wrapper-audit'))
@@ -304,13 +366,19 @@ export async function launchNativeVsCode({
     stdio: 'ignore',
   }
   const child = spawnVsCodeCommand(spawnImpl, codeCommand, args, spawnOptions)
+  await waitForCommandHandoff(child, 'VS Code workspace handoff')
   child.unref()
-  await new Promise(resolve => setTimeout(resolve, 2500))
+  await waitForObserverReadyImpl({ captureRoot: profile.captureRoot })
   const promptArgs = codePromptArgs({ profile, prompt })
+  const encodedUri = promptArgs.at(-1)
+  if (process.platform === 'win32' && Buffer.byteLength(encodedUri, 'utf8') > 7000) {
+    throw new Error('Raw Prompt is too large for the Windows VS Code URI launcher without loss.')
+  }
   if (launchUriImpl) {
     await launchUriImpl(observerPromptUri(prompt))
   } else {
     const promptChild = spawnVsCodeCommand(spawnImpl, codeCommand, promptArgs, spawnOptions)
+    await waitForCommandHandoff(promptChild, 'Claude prompt URI handoff')
     promptChild.unref()
   }
   return {

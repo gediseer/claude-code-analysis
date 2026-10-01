@@ -148,7 +148,7 @@ for (const required of [
   '04-readable/16-TOOL-LIFECYCLES.md',
   '04-readable/17-API-TURNS.md',
   '04-readable/replay-model.json',
-  'runtime-replay.html',
+  'legacy-run-dashboard.html',
 ]) {
   check(`readable view exists: ${required}`, await exists(path.join(runDir, required)))
 }

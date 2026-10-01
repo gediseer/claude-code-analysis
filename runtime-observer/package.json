@@ -9,7 +9,7 @@
     "compare": "node compare-runs.mjs",
     "index": "node build-case-index.mjs",
     "build:native-wrapper": "native-vscode-wrapper\\build-wrapper.cmd",
-    "test:notebook": "C:/Users/xueyi/.conda/envs/trading/python.exe test-notebook-replay.py",
+    "test:notebook": "python test-notebook-replay.py",
     "ability:start": "node observe-claude-skill.mjs"
   }
 }
