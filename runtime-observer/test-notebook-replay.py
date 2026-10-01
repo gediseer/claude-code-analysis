@@ -37,6 +37,14 @@ def test_notebook_targets_one_session() -> None:
                 "path": "/api/anthropic/v1/messages",
                 "acceptedAt": "2026-10-01T00:00:00.000Z",
                 "completedAt": "2026-10-01T00:00:01.000Z",
+                "globalSequence": 1,
+                "exchangeId": "0000000001",
+                "classification": {
+                    "kind": "session",
+                    "sessionId": session_id,
+                    "evidence": "header+body",
+                },
+                "state": "completed",
                 "responseStatus": 200,
                 "requestBytes": len(request),
                 "requestSha256": hashlib.sha256(request).hexdigest(),
@@ -47,6 +55,33 @@ def test_notebook_targets_one_session() -> None:
         encoding="utf-8",
     )
     (exchange / "02-client-request.parsed.json").write_bytes(request)
+    ledger_rows = [
+        {
+            "event": "accepted",
+            "globalSequence": 1,
+            "exchangeId": "0000000001",
+            "classification": {
+                "kind": "session",
+                "sessionId": session_id,
+                "evidence": "header+body",
+            },
+        },
+        {
+            "event": "terminal",
+            "summary": {
+                "globalSequence": 1,
+                "exchangeId": "0000000001",
+                "classification": {
+                    "kind": "session",
+                    "sessionId": session_id,
+                    "evidence": "header+body",
+                },
+            },
+        },
+    ]
+    (data_root / "ledger.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in ledger_rows), encoding="utf-8"
+    )
     (data_root / "sessions" / session_id / "parity-manifest.json").write_text(
         json.dumps({"status": "PARITY_VERIFIED_WITH_DECLARED_ROUTING"}),
         encoding="utf-8",
