@@ -251,7 +251,7 @@ async function spawnWorker(jobDir) {
   } finally {
     await Promise.all([stdout.close(), stderr.close()])
   }
-  await updateState(jobDir, { workerPid: child.pid, heartbeatAt: new Date().toISOString() }, 'worker-spawned')
+  await appendEvent(jobDir, 'worker-spawned', { workerPid: child.pid })
   return child.pid
 }
 
@@ -490,7 +490,11 @@ async function worker(jobDir) {
       throw error
     })
     await leaseHandle.writeFile(`${JSON.stringify({ jobDir, pid: process.pid, createdAt: new Date().toISOString() })}\n`)
-    let job = await readJson(statePath(jobDir))
+    let job = await updateState(jobDir, {
+      workerPid: process.pid,
+      workerNonce: randomUUID(),
+      heartbeatAt: new Date().toISOString(),
+    }, 'worker-started')
     heartbeat = setInterval(() => {
       updateState(jobDir, { heartbeatAt: new Date().toISOString(), workerPid: process.pid }, 'heartbeat')
         .catch(() => undefined)
